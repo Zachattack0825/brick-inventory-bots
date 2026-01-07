@@ -3,9 +3,8 @@ from bs4 import BeautifulSoup
 
 def get_lego_retiring_data():
     """
-    Scrape BrickEconomy 'Retiring Soon' sets and return a list of lists
-    for Google Sheets including set number, name, retail price, expected retirement,
-    projected price, and availability.
+    Scrape BrickEconomy 'Retiring Soon' sets with retail & projected prices.
+    Returns list of lists for Google Sheets.
     """
     url = "https://www.brickeconomy.com/sets/retiring-soon"
     headers = {
@@ -20,54 +19,46 @@ def get_lego_retiring_data():
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # Header row
-    results = [
-        ["Set Number", "Name", "Retail Price", "Projected Price", "Expected Retirement", "Availability"]
-    ]
+    results = [["Set Number", "Name", "Retail Price", "Projected Price", "Expected Retirement", "Availability"]]
 
-    # Each set entry on BrickEconomy appears as a headline <h4>
-    items = soup.find_all("h4")
-    for item in items:
-        title_text = item.get_text(strip=True)
+    # Each set is in a div with class 'retiring-set-card' (example)
+    cards = soup.find_all("div", class_="retiring-set-card")
+
+    for card in cards:
+        # Set number and name
+        title = card.find("h4")
+        if not title:
+            continue
+        title_text = title.get_text(strip=True)
         parts = title_text.split(" ", 1)
         if len(parts) != 2:
             continue
-
         set_number = parts[0]
         name = parts[1]
 
-        # Next sibling usually contains info text
-        info = item.find_next_sibling(text=True)
-        info_text = info.strip() if info else ""
-
-        # Retail Price
+        # Retail price
         retail_price = ""
-        if "Retail" in info_text:
-            try:
-                tokens = info_text.split("Retail")[1].split("|")
-                retail_price = tokens[0].replace("$", "").strip()
-            except:
-                retail_price = ""
+        retail_elem = card.find("span", class_="retail")
+        if retail_elem:
+            retail_price = retail_elem.get_text(strip=True).replace("$", "")
 
-        # Projected Price (if present in BrickEconomy, sometimes shown as % gain)
+        # Projected price
         projected_price = ""
-        if "Projected" in info_text:
-            try:
-                tokens = info_text.split("Projected")[1].split("|")
-                projected_price = tokens[0].strip()
-            except:
-                projected_price = ""
+        projected_elem = card.find("span", class_="projected")
+        if projected_elem:
+            projected_price = projected_elem.get_text(strip=True)
 
-        # Expected Retirement
+        # Expected retirement
         expected_retirement = ""
-        if "Expected retirement" in info_text:
-            try:
-                expected_retirement = info_text.split("Expected retirement")[1].split("|")[0].strip()
-            except:
-                expected_retirement = ""
+        retire_elem = card.find("span", class_="retirement-date")
+        if retire_elem:
+            expected_retirement = retire_elem.get_text(strip=True)
 
         # Availability
-        availability = "Available" if "Available" in info_text else ""
+        availability = ""
+        avail_elem = card.find("span", class_="availability")
+        if avail_elem:
+            availability = avail_elem.get_text(strip=True)
 
         results.append([set_number, name, retail_price, projected_price, expected_retirement, availability])
 
