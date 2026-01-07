@@ -6,7 +6,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 # Load JSON from GitHub secret
-service_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+service_json = os.environ.get("GOOGLE_SERVICE_JSON")
 creds_dict = json.loads(service_json)
 
 # Authenticate
