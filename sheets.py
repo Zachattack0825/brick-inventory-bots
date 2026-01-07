@@ -7,7 +7,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 # CONFIG
 # -------------------------------
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-SHEET_ID = "1ZjgX7_OfhsfVVkrFITcq8w1C61QJSxMgLKi5umPg1ZY"  # replace with your actual sheet ID
+SHEET_ID = "1ZjgX7_OfhsfVVkrFITcq8w1C61QJSxMgLKi5umPg1ZY"  # just the ID!
 
 # -------------------------------
 # LOAD SERVICE ACCOUNT JSON FROM SECRET
@@ -17,14 +17,10 @@ service_json = os.environ.get("GOOGLE_SERVICE_JSON")
 if not service_json:
     raise ValueError(
         "GOOGLE_SERVICE_JSON secret not found! "
-        "Make sure the secret exists, matches the name exactly, "
-        "and the workflow is running on the main branch."
+        "Check spelling and branch."
     )
 
-# Convert JSON string from secret into a Python dict
 creds_dict = json.loads(service_json)
-
-# Authenticate
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPES)
 gc = gspread.authorize(creds)
 
@@ -39,6 +35,10 @@ def update_sheet(data):
     data: list of lists, each sublist = a row
     Example: [["Set", "Price", "Exclusive"], ["12345", "$49.99", "Yes"]]
     """
-    ws.clear()  # clear existing data
-    ws.update("A1", data)
+    if not data or len(data) == 0:
+        print("No data to update.")
+        return
 
+    ws.clear()            # remove old data
+    ws.update("A1", data) # write new data
+    print(f"Sheet updated with {len(data)-1} rows.")
