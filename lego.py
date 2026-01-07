@@ -35,11 +35,23 @@ def get_lego_sets():
         })
     return sets
 
+def get_td_value_safe(soup, label):
+    """
+    Safely get the value for a <td> with label.
+    Returns empty string if not found.
+    """
+    try:
+        elem = soup.find("td", string=lambda x: x and label in x)
+        if elem and elem.find_next_sibling("td"):
+            return elem.find_next_sibling("td").get_text(strip=True).replace("$", "")
+    except Exception:
+        pass
+    return ""
 
 def get_set_prices_and_info(set_number):
     """
-    Scrape a LEGO set page for detailed info:
-    Retail Price, Projected Price, % Increase, Year, Where to Buy
+    Scrape detailed set info:
+    Retail Price, Projected Price, % Increase, Retirement Year, Where to Buy
     """
     url = f"{BASE_URL}/sets/{set_number}"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -55,24 +67,19 @@ def get_set_prices_and_info(set_number):
 
     soup = BeautifulSoup(r.text, "html.parser")
 
-    def get_td_value(label):
-        elem = soup.find("td", string=label)
-        if elem and elem.find_next_sibling("td"):
-            return elem.find_next_sibling("td").get_text(strip=True).replace("$", "")
-        return ""
-
     return {
-        "retail_price": get_td_value("Retail Price"),
-        "projected_price": get_td_value("Projected Price"),
-        "percent_increase": get_td_value("% Increase"),
-        "retirement_year": get_td_value("Year"),
-        "where_to_buy": get_td_value("Where to Buy")
+        "retail_price": get_td_value_safe(soup, "Retail Price"),
+        "projected_price": get_td_value_safe(soup, "Projected Price"),
+        "percent_increase": get_td_value_safe(soup, "% Increase"),
+        "retirement_year": get_td_value_safe(soup, "Year"),
+        "where_to_buy": get_td_value_safe(soup, "Where to Buy")
     }
-
 
 def get_lego_retiring_data():
     """
-    Combine set info + detailed prices into a clean sheet-ready table.
+    Combine set info + detailed prices into a clean table for Google Sheets.
+    Columns: ["Set Number", "Name", "Theme", "Retail Price", "Projected Price",
+              "% Increase", "Retirement Year", "Expected Retirement", "Availability", "Where to Buy"]
     """
     sets = get_lego_sets()
     results = [[
@@ -99,6 +106,6 @@ def get_lego_retiring_data():
             prices_info["where_to_buy"]
         ])
 
-        time.sleep(0.5)  # polite delay
+        time.sleep(0.5)  # polite delay to avoid overloading site
 
     return results
