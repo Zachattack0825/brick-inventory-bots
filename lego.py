@@ -1,50 +1,79 @@
 import requests
 from bs4 import BeautifulSoup
-import re
 
 def get_lego_retiring_data():
     """
-    Scrapes LEGO "Last Chance to Buy / Retiring Soon" page
-    Returns a list of lists (table) for sheet update.
+    Scrape BrickEconomy 'Retiring Soon' sets list and return
+    a list of lists (rows) for Google Sheets.
     """
-    url = "https://www.lego.com/en-us/categories/last-chance-to-buy"
+    url = "https://www.brickeconomy.com/sets/retiring-soon"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
     }
 
     r = requests.get(url, headers=headers, timeout=15)
     r.raise_for_status()
+
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # Header row for the sheet
-    results = [["Set", "Price", "Availability", "Retailer"]]
+    # Build header row
+    results = [
+        ["Set Number", "Name", "Expected Retirement", "Retail Price", "Availability"]
+    ]
 
-    # Each product card on the page
-    # The specific class names may change over time — update if needed
-    product_cards = soup.select("a.product-card--product")
+    # Each set entry on BrickEconomy appears as a headline (<h4>) followed by details
+    items = soup.find_all("h4")
+    for item in items:
+        title_text = item.get_text(strip=True)
 
-    for card in product_cards:
-        # Extract the product name
-        name_tag = card.select_one("span.product-card__title")
-        name = name_tag.text.strip() if name_tag else "No name"
+        # BrickEconomy titles look like:
+        #   "77053 Stargazing with Celeste"
+        #   "60373 Fire Rescue Boat"
+        # So first token is set number, rest is name
+        parts = title_text.split(" ", 1)
+        if len(parts) != 2:
+            continue
 
-        # Extract price if available
-        price_tag = card.select_one("span.product-price__price")
-        price = price_tag.text.strip() if price_tag else "Price N/A"
+        set_number = parts[0]   # e.g., "77053"
+        name = parts[1]         # e.g., "Stargazing with Celeste"
 
-        # Try extracting a LEGO set number from the link
-        href = card.get("href", "")
-        set_id = None
-        # Some LEGO URLs contain the set number at the end
-        match = re.search(r"/product/(?:.*)-(\d+)", href)
-        if match:
-            set_id = match.group(1)
+        # Next element sibling typically contains additional info
+        info = item.find_next_sibling(text=True)
+        if info:
+            info_text = info.strip()
         else:
-            set_id = "Unknown"
+            info_text = ""
 
-        # always mention it's LEGO (since this scraper is LEGO.com)
-        retailer = "LEGO"
+        # Extract price and status if present
+        # BrickEconomy tends to include "Retail $9.99" and "Available at retail"
+        price = ""
+        availability = ""
+        if "Retail" in info_text:
+            # Rough parse: split on "Retail"
+            tokens = info_text.split("Retail")
+            if len(tokens) > 1:
+                price_info = tokens[1].split("|")[0].strip()
+                price = price_info.replace("$", "").strip()
 
-        results.append([set_id, name, price, retailer])
+        if "Available" in info_text:
+            availability = "Available"
+        else:
+            availability = ""
+
+        # Expected retirement estimate may be buried in the text
+        # e.g., "Expected retirement Mid 2026 97.7%"
+        expected = ""
+        if "Expected retirement" in info_text:
+            try:
+                expected = info_text.split("Expected retirement")[1].split("|")[0].strip()
+            except:
+                expected = ""
+
+        # Append the row
+        results.append([set_number, name, expected, price, availability])
 
     return results
