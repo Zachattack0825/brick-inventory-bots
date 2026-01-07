@@ -7,7 +7,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 # CONFIG
 # -------------------------------
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-SHEET_ID = "https://docs.google.com/spreadsheets/d/1ZjgX7_OfhsfVVkrFITcq8w1C61QJSxMgLKi5umPg1ZY/edit?gid=0#gid=0"  # replace with your actual sheet ID
+SHEET_ID = "1ZjgX7_OfhsfVVkrFITcq8w1C61QJSxMgLKi5umPg1ZY"  # replace with your actual sheet ID
 
 # -------------------------------
 # LOAD SERVICE ACCOUNT JSON FROM SECRET
