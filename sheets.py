@@ -6,7 +6,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", SCOPES)
 gc = gspread.authorize(creds)
 
-SHEET_ID = "YOUR_GOOGLE_SHEET_ID"
+SHEET_ID = "https://docs.google.com/spreadsheets/d/1ZjgX7_OfhsfVVkrFITcq8w1C61QJSxMgLKi5umPg1ZY/edit?gid=0#gid=0"
 ws = gc.open_by_key(SHEET_ID).sheet1
 
 def update_sheet(results):
