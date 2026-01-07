@@ -1,111 +1,84 @@
 import requests
 from bs4 import BeautifulSoup
-import time
+import re
 
 BASE_URL = "https://www.brickeconomy.com"
 
-def get_lego_sets():
+def get_lego_retiring_data():
     """
-    Scrape retiring LEGO sets from BrickEconomy.
-    Returns list of dicts with basic info.
+    Scrapes BrickEconomy 'Sets Retiring Soon' page and extracts:
+    Set Number, Name, Theme, Retail Price, Expected Retirement, Availability.
+    Returns a table (list of lists) for Google Sheets.
     """
     url = f"{BASE_URL}/sets/retiring-soon"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
     r = requests.get(url, headers=headers, timeout=15)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
 
-    sets = []
-    table = soup.find("table")
-    if not table:
-        print("No table found on retiring page.")
-        return sets
+    results = [["Set Number", "Name", "Theme", "Year", "Retail Price", "Expected Retirement", "Availability"]]
 
-    rows = table.find_all("tr")[1:]  # skip header
-    for row in rows:
-        cols = row.find_all("td")
-        if len(cols) < 6:
+    # On the page, each set section begins with a heading: "#### 77053 Stargazing with Celeste"
+    # followed by text like "Theme Animal Crossing Year 2025 ... Retail $9.99 Available at retail Retiring soon"
+    h4_tags = soup.find_all("h4")
+
+    for h4 in h4_tags:
+        text = h4.get_text(strip=True)
+
+        # Parse set number and name
+        parts = text.split(" ", 1)
+        if len(parts) < 2:
             continue
-        sets.append({
-            "set_number": cols[0].get_text(strip=True),
-            "name": cols[1].get_text(strip=True),
-            "theme": cols[2].get_text(strip=True),
-            "expected_retirement": cols[4].get_text(strip=True),
-            "availability": cols[5].get_text(strip=True)
-        })
-    return sets
+        set_number = parts[0]
+        name = parts[1]
 
-def get_td_value_safe(soup, label):
-    """
-    Safely get the value for a <td> with label.
-    Returns empty string if not found.
-    """
-    try:
-        elem = soup.find("td", string=lambda x: x and label in x)
-        if elem and elem.find_next_sibling("td"):
-            return elem.find_next_sibling("td").get_text(strip=True).replace("$", "")
-    except Exception:
-        pass
-    return ""
+        # Default values
+        theme = ""
+        year = ""
+        retail_price = ""
+        expected_retirement = ""
+        availability = ""
 
-def get_set_prices_and_info(set_number):
-    """
-    Scrape detailed set info:
-    Retail Price, Projected Price, % Increase, Retirement Year, Where to Buy
-    """
-    url = f"{BASE_URL}/sets/{set_number}"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(url, headers=headers, timeout=15)
-    if r.status_code != 200:
-        return {
-            "retail_price": "",
-            "projected_price": "",
-            "percent_increase": "",
-            "retirement_year": "",
-            "where_to_buy": ""
-        }
+        # The info is in the sibling text after <h4>
+        info = h4.find_next_sibling(text=True)
+        if info:
+            info_text = info.strip()
 
-    soup = BeautifulSoup(r.text, "html.parser")
+            # Theme
+            m = re.search(r"Theme\s+([^0-9]+?)Year", info_text)
+            if m:
+                theme = m.group(1).strip()
 
-    return {
-        "retail_price": get_td_value_safe(soup, "Retail Price"),
-        "projected_price": get_td_value_safe(soup, "Projected Price"),
-        "percent_increase": get_td_value_safe(soup, "% Increase"),
-        "retirement_year": get_td_value_safe(soup, "Year"),
-        "where_to_buy": get_td_value_safe(soup, "Where to Buy")
-    }
+            # Year
+            m = re.search(r"Year\s+(\d{4})", info_text)
+            if m:
+                year = m.group(1).strip()
 
-def get_lego_retiring_data():
-    """
-    Combine set info + detailed prices into a clean table for Google Sheets.
-    Columns: ["Set Number", "Name", "Theme", "Retail Price", "Projected Price",
-              "% Increase", "Retirement Year", "Expected Retirement", "Availability", "Where to Buy"]
-    """
-    sets = get_lego_sets()
-    results = [[
-        "Set Number", "Name", "Theme", "Retail Price", "Projected Price",
-        "% Increase", "Retirement Year", "Expected Retirement", "Availability", "Where to Buy"
-    ]]
+            # Retail Price
+            m = re.search(r"Retail\s+\$([0-9.,]+)", info_text)
+            if m:
+                retail_price = m.group(1).strip()
 
-    for set_data in sets:
-        set_number = set_data["set_number"]
-        name = set_data["name"]
+            # Expected Retirement
+            m = re.search(r"Expected retirement\s+([A-Za-z0-9\s]+?)(?=\s+\d{1,3}%|Available|$)", info_text)
+            if m:
+                expected_retirement = m.group(1).strip()
 
-        prices_info = get_set_prices_and_info(set_number)
+            # Availability
+            if "Available at retail" in info_text:
+                availability = "Available"
 
         results.append([
             set_number,
             name,
-            set_data["theme"],
-            prices_info["retail_price"],
-            prices_info["projected_price"],
-            prices_info["percent_increase"],
-            prices_info["retirement_year"],
-            set_data["expected_retirement"],
-            set_data["availability"],
-            prices_info["where_to_buy"]
+            theme,
+            year,
+            retail_price,
+            expected_retirement,
+            availability
         ])
-
-        time.sleep(0.5)  # polite delay to avoid overloading site
 
     return results
