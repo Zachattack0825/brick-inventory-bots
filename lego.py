@@ -1,84 +1,127 @@
+import time
 import requests
-from bs4 import BeautifulSoup
-import re
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-BASE_URL = "https://www.brickeconomy.com"
+# ================== CONFIG ==================
 
-def get_lego_retiring_data():
-    """
-    Scrapes BrickEconomy 'Sets Retiring Soon' page and extracts:
-    Set Number, Name, Theme, Retail Price, Expected Retirement, Availability.
-    Returns a table (list of lists) for Google Sheets.
-    """
-    url = f"{BASE_URL}/sets/retiring-soon"
-    headers = {
-        "User-Agent": "Mozilla/5.0"
+BRICKSET_API_KEY = "3-2fKf-8Kxv-lMDwh"
+BRICKSET_USERNAME = "Zaach"
+BRICKSET_PASSWORD = "nbCIfwx3S1"
+
+GOOGLE_CREDS_FILE = "service_account.json"
+SHEET_NAME = "LEGO Data"
+
+SET_NUMBERS = [
+    "75331",
+    "10283",
+    "21318"
+]
+
+EBAY_FEE = 0.15
+REQUEST_DELAY = 2  # seconds (be polite)
+
+# ================== GOOGLE SHEETS ==================
+
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
+
+creds = ServiceAccountCredentials.from_json_keyfile_name(
+    GOOGLE_CREDS_FILE, scope
+)
+client = gspread.authorize(creds)
+sheet = client.open(SHEET_NAME).sheet1
+
+# ================== BRICKSET LOGIN ==================
+
+login_url = "https://brickset.com/api/v3.asmx/login"
+login_params = {
+    "apiKey": BRICKSET_API_KEY,
+    "username": BRICKSET_USERNAME,
+    "password": BRICKSET_PASSWORD
+}
+
+login_resp = requests.get(login_url, params=login_params).json()
+
+if "hash" not in login_resp:
+    raise Exception("Brickset login failed")
+
+USER_HASH = login_resp["hash"]
+
+# ================== HELPERS ==================
+
+def calculate_metrics(msrp, current_price):
+    try:
+        msrp = float(msrp)
+        current_price = float(current_price)
+    except:
+        return "", ""
+
+    gross = ((current_price - msrp) / msrp) * 100
+    net_price = current_price * (1 - EBAY_FEE)
+    net = ((net_price - msrp) / msrp) * 100
+
+    return round(gross, 2), round(net, 2)
+
+
+def fetch_set(set_number):
+    url = "https://brickset.com/api/v3.asmx/getSets"
+    params = {
+        "apiKey": BRICKSET_API_KEY,
+        "userHash": USER_HASH,
+        "params": f'{{"setNumber":"{set_number}-1"}}'
     }
 
-    r = requests.get(url, headers=headers, timeout=15)
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
+    resp = requests.get(url, params=params).json()
 
-    results = [["Set Number", "Name", "Theme", "Year", "Retail Price", "Expected Retirement", "Availability"]]
+    if not resp.get("sets"):
+        return None
 
-    # On the page, each set section begins with a heading: "#### 77053 Stargazing with Celeste"
-    # followed by text like "Theme Animal Crossing Year 2025 ... Retail $9.99 Available at retail Retiring soon"
-    h4_tags = soup.find_all("h4")
+    s = resp["sets"][0]
 
-    for h4 in h4_tags:
-        text = h4.get_text(strip=True)
+    name = s.get("name", "")
+    msrp = s.get("USRetailPrice") or ""
+    retirement_year = s.get("retirementYear") or ""
+    retired = "Y" if retirement_year else "N"
 
-        # Parse set number and name
-        parts = text.split(" ", 1)
-        if len(parts) < 2:
-            continue
-        set_number = parts[0]
-        name = parts[1]
+    return {
+        "set_number": set_number,
+        "name": name,
+        "msrp": msrp,
+        "current_price": "",
+        "retired": retired,
+        "retirement_year": retirement_year
+    }
 
-        # Default values
-        theme = ""
-        year = ""
-        retail_price = ""
-        expected_retirement = ""
-        availability = ""
+# ================== MAIN ==================
 
-        # The info is in the sibling text after <h4>
-        info = h4.find_next_sibling(text=True)
-        if info:
-            info_text = info.strip()
+for set_number in SET_NUMBERS:
+    print(f"Processing {set_number}...")
 
-            # Theme
-            m = re.search(r"Theme\s+([^0-9]+?)Year", info_text)
-            if m:
-                theme = m.group(1).strip()
+    data = fetch_set(set_number)
+    if not data:
+        print(f"  ❌ Not found")
+        continue
 
-            # Year
-            m = re.search(r"Year\s+(\d{4})", info_text)
-            if m:
-                year = m.group(1).strip()
+    gross_roi, net_roi = calculate_metrics(
+        data["msrp"],
+        data["current_price"]
+    )
 
-            # Retail Price
-            m = re.search(r"Retail\s+\$([0-9.,]+)", info_text)
-            if m:
-                retail_price = m.group(1).strip()
+    sheet.append_row([
+        data["set_number"],
+        data["name"],
+        data["msrp"],
+        data["current_price"],
+        data["retired"],
+        data["retirement_year"],
+        gross_roi,
+        net_roi
+    ])
 
-            # Expected Retirement
-            m = re.search(r"Expected retirement\s+([A-Za-z0-9\s]+?)(?=\s+\d{1,3}%|Available|$)", info_text)
-            if m:
-                expected_retirement = m.group(1).strip()
+    print(f"  ✅ Added {data['name']}")
+    time.sleep(REQUEST_DELAY)
 
-            # Availability
-            if "Available at retail" in info_text:
-                availability = "Available"
-
-        results.append([
-            set_number,
-            name,
-            theme,
-            year,
-            retail_price,
-            expected_retirement,
-            availability
-        ])
-
-    return results
+print("Done.")
